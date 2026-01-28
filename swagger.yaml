@@ -1,0 +1,288 @@
+openapi: 3.0.3
+info:
+  title: Mini CRM API
+  description: API for Mini CRM ticket management system
+  version: 1.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: http://localhost:8080/api
+    description: Local development server
+  - url: http://localhost/api
+    description: Docker server
+
+paths:
+  /tickets:
+    post:
+      summary: Create a new ticket
+      description: Creates a new support ticket from the widget form
+      operationId: createTicket
+      tags:
+        - Tickets
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - name
+                - subject
+                - text
+              properties:
+                name:
+                  type: string
+                  maxLength: 255
+                  description: Customer name
+                  example: John Doe
+                phone:
+                  type: string
+                  pattern: '^\+[1-9]\d{1,14}$'
+                  description: Phone in E.164 format (required if email not provided)
+                  example: '+79001234567'
+                email:
+                  type: string
+                  format: email
+                  description: Email address (required if phone not provided)
+                  example: john@example.com
+                subject:
+                  type: string
+                  maxLength: 255
+                  description: Ticket subject
+                  example: Need help with my order
+                text:
+                  type: string
+                  maxLength: 10000
+                  description: Ticket message body
+                  example: I placed an order yesterday but haven't received confirmation...
+                files:
+                  type: array
+                  maxItems: 5
+                  items:
+                    type: string
+                    format: binary
+                  description: File attachments (max 5 files, 10MB each)
+      responses:
+        '201':
+          description: Ticket created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Ticket created successfully
+                  data:
+                    $ref: '#/components/schemas/Ticket'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: You can only submit one ticket per day
+
+  /tickets/statistics:
+    get:
+      summary: Get ticket statistics
+      description: Returns ticket statistics for the specified period
+      operationId: getStatistics
+      tags:
+        - Statistics
+      security:
+        - sanctum: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Start date (defaults to 1 month ago)
+          example: '2024-01-01'
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+          description: End date (defaults to today)
+          example: '2024-01-31'
+        - name: group_by
+          in: query
+          schema:
+            type: string
+            enum: [day, week, month]
+            default: day
+          description: Group statistics by period
+      responses:
+        '200':
+          description: Statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Statistics'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unauthenticated.
+
+components:
+  securitySchemes:
+    sanctum:
+      type: http
+      scheme: bearer
+      bearerFormat: Token
+
+  schemas:
+    Ticket:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        subject:
+          type: string
+          example: Need help with my order
+        text:
+          type: string
+          example: I placed an order yesterday...
+        status:
+          type: string
+          enum: [new, in_progress, answered, closed]
+          example: new
+        status_label:
+          type: string
+          example: New
+        answered_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2024-01-15T10:30:00.000000Z'
+        created_at:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:00:00.000000Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:00:00.000000Z'
+        customer:
+          $ref: '#/components/schemas/Customer'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attachment'
+
+    Customer:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: John Doe
+        phone:
+          type: string
+          nullable: true
+          example: '+79001234567'
+        email:
+          type: string
+          nullable: true
+          example: john@example.com
+        created_at:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:00:00.000000Z'
+
+    Attachment:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: document.pdf
+        size:
+          type: integer
+          example: 102400
+        mime_type:
+          type: string
+          example: application/pdf
+        url:
+          type: string
+          format: uri
+          example: /storage/1/document.pdf
+
+    Statistics:
+      type: object
+      properties:
+        period:
+          type: object
+          properties:
+            from:
+              type: string
+              format: date
+              example: '2024-01-01'
+            to:
+              type: string
+              format: date
+              example: '2024-01-31'
+        total:
+          type: integer
+          example: 150
+        by_status:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            new: 30
+            in_progress: 45
+            answered: 50
+            closed: 25
+        by_period:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            '2024-01-01': 5
+            '2024-01-02': 8
+            '2024-01-03': 3
+
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+          example: The given data was invalid.
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            name:
+              - The name field is required.
+            phone:
+              - Either phone or email is required
